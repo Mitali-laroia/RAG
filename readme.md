@@ -14,7 +14,7 @@ A powerful Retrieval-Augmented Generation (RAG) application built with Streamlit
 
 ## 🚀 Live Demo
 
-[🔗 Try the app here](your-streamlit-app-url-here)
+[🔗 Try the app here](https://raggit-7kvxk6pbcz7fq7gl2bhzpn.streamlit.app/)
 
 ## 🛠️ Tech Stack
 
@@ -38,7 +38,7 @@ Before running this application, you need:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/pdf-rag-assistant.git
+git clone https://github.com/Mitali-laroia/RAG.git
 cd pdf-rag-assistant
 ```
 
@@ -179,7 +179,7 @@ pdf-rag-assistant/
 
 ### Getting Help
 
-1. Check the [Issues](https://github.com/yourusername/pdf-rag-assistant/issues) page
+1. Check the [Issues](https://github.com/Mitali-laroia/RAG/issues) page
 2. Review the troubleshooting section above
 3. Create a new issue with detailed error information
 
