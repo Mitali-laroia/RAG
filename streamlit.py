@@ -16,11 +16,42 @@ load_dotenv()
 # Initialize OpenAI client
 @st.cache_resource
 def get_openai_client():
-    return OpenAI()
+    return OpenAI(api_key=st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"))
 
 @st.cache_resource
 def get_embedding_model():
-    return OpenAIEmbeddings(model="text-embedding-3-large")
+    return OpenAIEmbeddings(
+        model="text-embedding-3-large",
+        openai_api_key=st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    )
+
+def get_qdrant_config():
+    """Get Qdrant configuration from secrets or environment variables"""
+    try:
+        url = None
+        api_key = None
+        
+        # Try to get from Streamlit secrets first
+        if hasattr(st, 'secrets'):
+            url = st.secrets.get("QDRANT_URL")
+            api_key = st.secrets.get("QDRANT_API_KEY")
+        
+        # Fallback to environment variables
+        if not url:
+            url = os.getenv("QDRANT_URL")
+        if not api_key:
+            api_key = os.getenv("QDRANT_API_KEY")
+            
+        return {
+            "url": url,
+            "api_key": api_key
+        }
+    except Exception as e:
+        st.error(f"Error getting Qdrant config: {str(e)}")
+        return {
+            "url": None,
+            "api_key": None
+        }
 
 def store_vector_db(vector_store, collection_name):
     """Store vector database in session state with caching"""
@@ -31,6 +62,14 @@ def store_vector_db(vector_store, collection_name):
 def process_pdf(uploaded_file):
     """Process uploaded PDF and create embeddings"""
     try:
+        # Get Qdrant configuration first
+        qdrant_config = get_qdrant_config()
+        
+        # Validate Qdrant configuration
+        if not qdrant_config["url"] or not qdrant_config["api_key"]:
+            st.error("❌ Qdrant configuration is missing. Please check your QDRANT_URL and QDRANT_API_KEY.")
+            return None, None, 0
+        
         # Create a temporary file to save the uploaded PDF
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
@@ -53,10 +92,11 @@ def process_pdf(uploaded_file):
         # Create unique collection name based on file name and timestamp
         collection_name = f"pdf_{int(time.time())}"
         
-        # Create vector store
+        # Create vector store with Qdrant Cloud
         vector_store = QdrantVectorStore.from_documents(
             documents=split_docs,
-            url="http://localhost:6333",
+            url=qdrant_config["url"],
+            api_key=qdrant_config["api_key"],
             collection_name=collection_name,
             embedding=embedding_model
         )
@@ -68,6 +108,19 @@ def process_pdf(uploaded_file):
     
     except Exception as e:
         st.error(f"Error processing PDF: {str(e)}")
+        # Add more detailed error information for debugging
+        if "qdrant" in str(e).lower():
+            st.error("Qdrant connection error. Please check your Qdrant Cloud configuration.")
+        elif "openai" in str(e).lower():
+            st.error("OpenAI API error. Please check your OpenAI API key.")
+        
+        # Clean up temporary file if it exists
+        try:
+            if 'tmp_file_path' in locals():
+                os.unlink(tmp_file_path)
+        except:
+            pass
+            
         return None, None, 0
 
 def search_and_generate_response(query, vector_store):
@@ -97,7 +150,7 @@ def search_and_generate_response(query, vector_store):
         # Get OpenAI client and generate response
         client = get_openai_client()
         chat_completion = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4.1-mini",  # Fixed model name
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query},
@@ -116,6 +169,20 @@ def main():
         layout="wide"
     )
     
+    # Check if required secrets are configured
+    qdrant_config = get_qdrant_config()
+    openai_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
+    if not all([qdrant_config["url"], qdrant_config["api_key"], openai_key]):
+        st.error("❌ Missing required configuration. Please check your secrets configuration.")
+        st.markdown("""
+        **Required Secrets:**
+        - `QDRANT_URL`: Your Qdrant Cloud cluster URL
+        - `QDRANT_API_KEY`: Your Qdrant Cloud API key
+        - `OPENAI_API_KEY`: Your OpenAI API key
+        """)
+        st.stop()
+    
     # Initialize session state
     if 'vector_store' not in st.session_state:
         st.session_state.vector_store = None
@@ -127,12 +194,6 @@ def main():
         st.session_state.pdf_processed = False
     if 'show_chat' not in st.session_state:
         st.session_state.show_chat = False
-    
-    # Debug info (remove this after testing)
-    # st.sidebar.write("Debug Info:")
-    # st.sidebar.write(f"pdf_processed: {st.session_state.pdf_processed}")
-    # st.sidebar.write(f"show_chat: {st.session_state.show_chat}")
-    # st.sidebar.write(f"vector_store exists: {st.session_state.vector_store is not None}")
     
     # Show chat interface if both conditions are met
     if st.session_state.pdf_processed and st.session_state.show_chat:
